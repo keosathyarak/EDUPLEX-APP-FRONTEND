@@ -1,42 +1,32 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:http/http.dart' as http;
+import '../core/api/api_config.dart';
+import 'api_config.dart';
 
 class ApiChatBot {
-  // ⚠️ DO NOT COMMIT REAL KEY
-  static const String _apiKey = "AIzaSyCNu2k4PCSBRLaXkkUW4mFmCRxTeqAP5y0";
-
-  static const String _endpoint =
-      "https://generativelanguage.googleapis.com/v1beta/models/"
-      "gemini-2.5-flash:generateContent";
+  static String get _endpoint => "${ApiConfig.baseUrl}/chatbot";
 
   static Future<String> sendMessageWithMemory({
     required String userMessage,
     required List<Map<String, String>> memory,
   }) async {
     try {
-      final contents = memory
-          .map((m) => {
-        "parts": [
-          {"text": m["text"]}
-        ]
-      })
-          .toList();
-
-      contents.add({
-        "parts": [
-          {"text": userMessage}
-        ]
-      });
-
       final response = await http
           .post(
-        Uri.parse("$_endpoint?key=$_apiKey"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"contents": contents}),
+        Uri.parse(_endpoint),
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+        },
+        body: jsonEncode({
+          "message": userMessage,
+          "memory": memory,
+        }),
       )
-          .timeout(const Duration(minutes: 10)); // ⏳ slow internet
+          .timeout(const Duration(seconds: 60));
 
       if (response.statusCode != 200) {
         return "⚠️ AI service is unavailable right now. Please try again.";
@@ -44,31 +34,15 @@ class ApiChatBot {
 
       final data = jsonDecode(response.body);
 
-      if (data["candidates"] == null || data["candidates"].isEmpty) {
-        return "⚠️ I couldn’t generate a response. Try again.";
-      }
-
-      return data["candidates"][0]["content"]["parts"][0]["text"]
-          .toString()
-          .trim();
-    }
-
-    // ❌ No internet
-    on SocketException {
+      return data["reply"]?.toString().trim() ??
+          "⚠️ I couldn’t generate a response. Try again.";
+    } on SocketException {
       return "❌ No internet connection. Please check your network.";
-    }
-
-    // ⏳ Timeout (slow internet)
-    on TimeoutException {
+    } on TimeoutException {
       return "⏳ Internet is too slow. Please try again.";
-    }
-
-    // ❌ Unknown error
-    catch (e) {
+    } catch (e) {
+      print("ChatBot Error: $e");
       return "⚠️ Something went wrong. Please try again.";
     }
   }
 }
-
-
-
