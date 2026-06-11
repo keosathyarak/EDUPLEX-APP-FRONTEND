@@ -1,5 +1,6 @@
-name: EduPlex
-description: "A new Flutter project."
+name: eduplex
+
+description: "EduPlex Learning Platform"
 
 publish_to: 'none'
 
@@ -12,8 +13,8 @@ dependencies:
   flutter:
     sdk: flutter
 
-  http: ^1.2.0
   cupertino_icons: ^1.0.8
+  http: ^1.2.0
   shared_preferences: ^2.2.2
   youtube_player_flutter: ^9.1.0
   image_picker: ^1.2.1
@@ -42,7 +43,9 @@ flutter:
       fonts:
         - asset: assets/fonts/JainiPurva-Regular.ttf
 
-flutter_icons:
+flutter_launcher_icons:
   android: true
   ios: true
-  image_path: assets/icon/eduplexlogo.png
+  image_path: "assets/icon/eduplexlogo.png"
+  remove_alpha_ios: true
+  min_sdk_android: 21
