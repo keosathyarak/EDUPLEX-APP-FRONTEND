@@ -4,10 +4,11 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
+import 'api_config.dart';
+
 class AuthApi {
 
-  static const String baseUrl =
-      "https://keratotic-uninserted-henry.ngrok-free.dev/api";
+  static String get baseUrl => ApiConfig.baseUrl;
 
   // ================= REGISTER =================
   static Future<Map<String, dynamic>> register({

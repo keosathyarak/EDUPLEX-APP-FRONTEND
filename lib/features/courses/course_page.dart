@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:EduPlex/features/home/widgets/header.dart';
 import 'package:EduPlex/routes/app_routes.dart';
 
+import '../../core/api/api_config.dart';
 import '../../routes/app_router.dart';
 
 class CoursePage extends StatefulWidget {
@@ -27,20 +28,22 @@ class _CoursePageState extends State<CoursePage> {
   bool isLoading = true;
   int imageRefreshKey = 0;
 
-  final String baseUrl = "https://keratotic-uninserted-henry.ngrok-free.dev";
+  static String get baseUrl => ApiConfig.baseUrl;
+
   @override
   void initState() {
     super.initState();
     fetchCourses();
   }
 
-  // ================= FETCH COURSES =================
   Future<void> fetchCourses() async {
     try {
       final response = await http.get(
-        Uri.parse("$baseUrl/api/courses"),
+        Uri.parse("$baseUrl/courses"),
         headers: {"Accept": "application/json"},
       );
+
+      debugPrint("COURSE RESPONSE: ${response.body}");
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -49,28 +52,27 @@ class _CoursePageState extends State<CoursePage> {
           courses = data['courses'] ?? [];
           isLoading = false;
         });
+      } else {
+        setState(() => isLoading = false);
       }
     } catch (e) {
-      print("Fetch error: $e");
+      debugPrint("Fetch error: $e");
       setState(() => isLoading = false);
     }
   }
 
-  // ================= REFRESH =================
   Future<void> _refresh() async {
     await fetchCourses();
     setState(() => imageRefreshKey++);
     headerKey.currentState?.refreshFromParent();
   }
 
-  // ================= CLICK BUY =================
   Future<void> _onLearnMore(BuildContext context, dynamic course) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString("token");
 
     final bool isFree = course["price"] == null || course["price"] == 0;
 
-    // ===== NOT LOGIN =====
     if (token == null || token.isEmpty) {
       await prefs.setBool("redirect_after_login", true);
       await prefs.setString("redirect_course", jsonEncode(course));
@@ -79,9 +81,7 @@ class _CoursePageState extends State<CoursePage> {
       return;
     }
 
-    // ===== FREE COURSE =====
     if (isFree) {
-      print("click hi");
       Navigator.pushNamed(
         context,
         AppRoutes.courseDetail,
@@ -90,20 +90,17 @@ class _CoursePageState extends State<CoursePage> {
       return;
     }
 
-    // ===== PAID COURSE =====
     await _checkPurchase(context, course, token);
   }
 
-  // ================= CHECK PURCHASE =================
   Future<void> _checkPurchase(
       BuildContext context,
       dynamic course,
       String token,
       ) async {
-
     try {
       final response = await http.get(
-        Uri.parse("$baseUrl/api/check-purchase/${course["id"]}"),
+        Uri.parse("$baseUrl/check-purchase/${course["id"]}"),
         headers: {
           "Accept": "application/json",
           "Authorization": "Bearer $token",
@@ -128,11 +125,212 @@ class _CoursePageState extends State<CoursePage> {
         }
       }
     } catch (e) {
-      print("Purchase error: $e");
+      debugPrint("Purchase error: $e");
     }
   }
 
-  // ================= UI =================
+  String getCourseImageUrl(dynamic course) {
+    final imagePath = course["image"];
+
+    if (imagePath == null || imagePath.toString().isEmpty) {
+      return "";
+    }
+
+    if (imagePath.toString().startsWith("http")) {
+      return imagePath.toString();
+    }
+
+    final domain = ApiConfig.baseUrl.replaceAll('/api', '');
+
+    return "$domain/storage/$imagePath";
+  }
+
+  Widget _noCoursesUI() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.only(top: 90),
+        child: Column(
+          children: [
+            Icon(
+              Icons.menu_book_rounded,
+              size: 90,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 18),
+            Text(
+              "No Courses Available",
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "Please pull down to refresh or check again later.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade500,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _courseCard(dynamic course) {
+    final price = course["price"];
+    final bool isFree = price == null || price == 0;
+
+    final imageUrl = getCourseImageUrl(course);
+
+    debugPrint("IMAGE URL: $imageUrl");
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(22),
+            ),
+            child: imageUrl.isEmpty
+                ? _imageFallback()
+                : Stack(
+              children: [
+                Image.network(
+                  imageUrl,
+                  key: ValueKey("$imageUrl-$imageRefreshKey"),
+                  height: 180,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+
+                    return Container(
+                      height: 180,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: const CircularProgressIndicator(),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    debugPrint("IMAGE ERROR: $error");
+                    debugPrint("FAILED IMAGE URL: $imageUrl");
+
+                    return _imageFallback();
+                  },
+                ),
+                _priceBadge(isFree, price),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  course["title"] ?? "",
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.person, size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        course["teacher"] ?? "",
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(Icons.book, size: 16),
+                    const SizedBox(width: 4),
+                    Text("${course["lessons_count"] ?? 0} Lessons"),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: () => _onLearnMore(context, course),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isFree ? Colors.green : Colors.blue,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    child: Text(
+                      isFree ? "Start Learning" : "Buy Now",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _imageFallback() {
+    return Container(
+      height: 180,
+      width: double.infinity,
+      color: Colors.blue,
+      child: const Center(
+        child: Icon(
+          Icons.school,
+          color: Colors.white,
+          size: 40,
+        ),
+      ),
+    );
+  }
+
+  Widget _priceBadge(bool isFree, dynamic price) {
+    return Positioned(
+      top: 12,
+      right: 12,
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 6,
+        ),
+        decoration: BoxDecoration(
+          color: isFree ? Colors.green : Colors.blue,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          isFree ? "FREE" : "\$$price",
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -148,184 +346,28 @@ class _CoursePageState extends State<CoursePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-
                 Header.header(
                   key: headerKey,
                   onToggleTheme: widget.onToggleTheme,
                 ),
-
                 const SizedBox(height: 16),
-
                 Text(
                   "Courses",
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-
                 const SizedBox(height: 22),
-
-                ListView.separated(
+                courses.isEmpty
+                    ? _noCoursesUI()
+                    : ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: courses.length,
                   separatorBuilder: (_, __) =>
                   const SizedBox(height: 20),
                   itemBuilder: (context, index) {
-
-                    final course = courses[index];
-                    final price = course["price"];
-                    final bool isFree = price == null || price == 0;
-
-                    final imageUrl =
-                        "$baseUrl/storage/${course["image"]}";
-
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(22),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.06),
-                            blurRadius: 18,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-
-                          // IMAGE
-                          ClipRRect(
-                            borderRadius:
-                            const BorderRadius.vertical(
-                              top: Radius.circular(22),
-                            ),
-                            child: Stack(
-                              children: [
-                                Image.network(
-                                  imageUrl,
-                                  key: ValueKey(
-                                      "$imageUrl-$imageRefreshKey"),
-                                  height: 180,
-                                  width: double.infinity,
-                                  fit: BoxFit.cover,
-                                  errorBuilder:
-                                      (context, error, stackTrace) {
-                                    return Container(
-                                      height: 180,
-                                      color: Colors.blue,
-                                      child: const Center(
-                                        child: Icon(
-                                          Icons.school,
-                                          color: Colors.white,
-                                          size: 40,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-
-                                Positioned(
-                                  top: 12,
-                                  right: 12,
-                                  child: Container(
-                                    padding:
-                                    const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isFree
-                                          ? Colors.green
-                                          : Colors.blue,
-                                      borderRadius:
-                                      BorderRadius.circular(20),
-                                    ),
-                                    child: Text(
-                                      isFree
-                                          ? "FREE"
-                                          : "\$${price}",
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          // CONTENT
-                          Padding(
-                            padding: const EdgeInsets.all(18),
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-
-                                Text(
-                                  course["title"] ?? "",
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .titleMedium
-                                      ?.copyWith(
-                                      fontWeight:
-                                      FontWeight.bold),
-                                ),
-
-                                const SizedBox(height: 8),
-
-                                Row(
-                                  children: [
-                                    const Icon(Icons.person, size: 16),
-                                    const SizedBox(width: 6),
-                                    Text(course["teacher"] ?? ""),
-                                    const Spacer(),
-                                    const Icon(Icons.book, size: 16),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                        "${course["lessons_count"]} Lessons"),
-                                  ],
-                                ),
-
-                                const SizedBox(height: 18),
-
-                                SizedBox(
-                                  width: double.infinity,
-                                  height: 46,
-                                  child: ElevatedButton(
-                                    onPressed: () =>
-                                        _onLearnMore(context, course),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor:
-                                      isFree
-                                          ? Colors.green
-                                          : Colors.blue,
-                                      shape:
-                                      RoundedRectangleBorder(
-                                        borderRadius:
-                                        BorderRadius.circular(14),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      isFree
-                                          ? "Start Learning"
-                                          : "Buy Now",
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
+                    return _courseCard(courses[index]);
                   },
                 ),
               ],

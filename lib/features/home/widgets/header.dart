@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/api/api_config.dart';
+
 class Header extends StatefulWidget {
   final VoidCallback? onToggleTheme;
   final VoidCallback? onNotificationTap;
@@ -31,11 +33,9 @@ class HeaderState extends State<Header> {
   int avatarRefreshKey = 0;
 
   String userName = "User";
-
-  final String defaultAvatar =
-      "assets/icon/logologin.png";
-
   String avatarUrl = "";
+
+  final String defaultAvatar = "assets/icon/logologin.png";
 
   @override
   void initState() {
@@ -50,24 +50,28 @@ class HeaderState extends State<Header> {
 
     final token = prefs.getString("token");
     final name = prefs.getString("name");
-    final avatar = prefs.getString("avatar");
+    final image = prefs.getString("image");
 
     String newName = "Guest";
     String newAvatar = defaultAvatar;
 
     if (token != null && token.isNotEmpty) {
       newName = (name != null && name.isNotEmpty) ? name : "User";
-      newAvatar =
-      (avatar != null && avatar.isNotEmpty) ? avatar : defaultAvatar;
+
+      if (image != null && image.isNotEmpty) {
+        if (image.startsWith("http")) {
+          newAvatar = image;
+        } else {
+          newAvatar = "${ApiConfig.domain}/storage/$image";
+        }
+      }
     }
 
-    if (newName != userName || newAvatar != avatarUrl) {
-      setState(() {
-        userName = newName;
-        avatarUrl = newAvatar;
-        avatarRefreshKey++;
-      });
-    }
+    setState(() {
+      userName = newName;
+      avatarUrl = newAvatar;
+      avatarRefreshKey++;
+    });
   }
 
   void refreshFromParent() {
@@ -82,8 +86,6 @@ class HeaderState extends State<Header> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-
-        // ===== AVATAR =====
         CircleAvatar(
           radius: 24,
           backgroundColor: theme.colorScheme.primary.withOpacity(0.15),
@@ -94,7 +96,6 @@ class HeaderState extends State<Header> {
 
         const SizedBox(width: 12),
 
-        // ===== TEXT =====
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -118,7 +119,6 @@ class HeaderState extends State<Header> {
           ),
         ),
 
-        // 🔔 Notification
         Stack(
           alignment: Alignment.center,
           children: [
@@ -141,7 +141,6 @@ class HeaderState extends State<Header> {
           ],
         ),
 
-        // 🌙 Dark Mode
         IconButton(
           icon: Icon(
             isDark ? Icons.light_mode : Icons.dark_mode,
@@ -153,10 +152,9 @@ class HeaderState extends State<Header> {
   }
 
   Widget _buildAvatarImage(ThemeData theme) {
-    // If it's a network URL
     if (avatarUrl.startsWith("http")) {
       return Image.network(
-        avatarUrl,
+        "$avatarUrl?v=$avatarRefreshKey",
         key: ValueKey(avatarRefreshKey),
         width: 48,
         height: 48,
@@ -171,7 +169,6 @@ class HeaderState extends State<Header> {
       );
     }
 
-    // Otherwise load asset image
     return Image.asset(
       avatarUrl,
       key: ValueKey(avatarRefreshKey),

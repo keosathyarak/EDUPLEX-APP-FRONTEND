@@ -88,7 +88,7 @@ class AboutPage extends StatelessWidget {
                           ),
                           SizedBox(height: 6),
                           Text(
-                            "Koeut Bora",
+                            "KEO SATHYARAK",
                             style: TextStyle(
                               color: Colors.white,
                               fontSize: 14,
@@ -107,15 +107,15 @@ class AboutPage extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: Image.asset(
-                        "assets/images/teacher.jpg",
-                        height: 150,
-                        width: 120,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
+                    // ClipRRect(
+                    //   borderRadius: BorderRadius.circular(18),
+                    //   child: Image.asset(
+                    //     "assets/images/teacher.jpg",
+                    //     height: 150,
+                    //     width: 120,
+                    //     fit: BoxFit.cover,
+                    //   ),
+                    // ),
                   ],
                 ),
               ),
@@ -158,13 +158,6 @@ class AboutPage extends StatelessWidget {
                     image: "assets/images/rong.jpg",
                     phone: "012 345 678",
                     email: "phornrong@gmail.com",
-                  ),
-                  TeamCard(
-                    name: "Leng Saroth",
-                    role: "Planning & Documentation",
-                    image: "assets/images/roth.PNG",
-                    phone: "012 345 678",
-                    email: "lengsaroth@gmail.com",
                   ),
                   TeamCard(
                     name: "Din Rasin",

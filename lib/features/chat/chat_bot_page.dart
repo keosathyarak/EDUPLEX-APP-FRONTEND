@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/api/api_chat_bot.dart';
 
@@ -14,7 +15,6 @@ class _ChatBotPageState extends State<ChatBotPage> {
 
   bool isLoading = false;
 
-  /// 🧠 Chat memory
   final List<Map<String, String>> chatMemory = [];
 
   final List<Map<String, dynamic>> messages = [
@@ -31,34 +31,58 @@ class _ChatBotPageState extends State<ChatBotPage> {
     setState(() {
       isLoading = true;
       messages.add({"text": text, "isUser": true});
+      messages.add({"text": "Typing...", "isUser": false});
     });
 
     chatMemory.add({"role": "user", "text": text});
     _controller.clear();
     _scrollToBottom();
 
-    setState(() {
-      messages.add({"text": "Typing...", "isUser": false});
-    });
+    try {
+      final reply = await ApiChatBot.sendMessageWithMemory(
+        userMessage: text,
+        memory: chatMemory,
+      );
 
-    final reply = await ApiChatBot.sendMessageWithMemory(
-      userMessage: text,
-      memory: chatMemory,
-    );
+      await typeBotReply(reply);
 
-    setState(() {
-      messages.removeLast();
-      messages.add({"text": reply, "isUser": false});
-      isLoading = false;
-    });
+      if (!reply.startsWith("❌") &&
+          !reply.startsWith("⚠️") &&
+          !reply.startsWith("⏳")) {
+        chatMemory.add({"role": "assistant", "text": reply});
+      }
+    } catch (e) {
+      setState(() {
+        messages.removeLast();
+        messages.add({"text": "❌ Error: $e", "isUser": false});
+      });
+    }
 
-    if (!reply.startsWith("❌") &&
-        !reply.startsWith("⚠️") &&
-        !reply.startsWith("⏳")) {
-      chatMemory.add({"role": "assistant", "text": reply});
+    if (mounted) {
+      setState(() => isLoading = false);
     }
 
     _scrollToBottom();
+  }
+
+  Future<void> typeBotReply(String reply) async {
+    if (messages.isNotEmpty) {
+      messages.removeLast();
+    }
+
+    messages.add({"text": "", "isUser": false});
+
+    for (int i = 0; i < reply.length; i++) {
+      await Future.delayed(const Duration(milliseconds: 20));
+
+      if (!mounted) return;
+
+      setState(() {
+        messages.last["text"] = reply.substring(0, i + 1);
+      });
+
+      _scrollToBottom();
+    }
   }
 
   void _scrollToBottom() {
@@ -74,6 +98,13 @@ class _ChatBotPageState extends State<ChatBotPage> {
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -84,7 +115,6 @@ class _ChatBotPageState extends State<ChatBotPage> {
         children: [
           _chatHeader(theme),
 
-          /// ===== CHAT LIST =====
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
@@ -101,15 +131,14 @@ class _ChatBotPageState extends State<ChatBotPage> {
             ),
           ),
 
-          /// ===== INPUT AREA =====
-          /// ===== INPUT AREA =====
           SafeArea(
             top: false,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
@@ -156,29 +185,28 @@ class _ChatBotPageState extends State<ChatBotPage> {
                                 color: Colors.white,
                               ),
                             )
-                                : const Icon(Icons.send,
-                                color: Colors.white, size: 18),
+                                : const Icon(
+                              Icons.send,
+                              color: Colors.white,
+                              size: 18,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-
-                /// ⬇️ Bottom spacing for floating nav
                 SizedBox(
                   height: MediaQuery.of(context).padding.bottom + 110,
                 ),
               ],
             ),
           ),
-
         ],
       ),
     );
   }
 
-  // ================= HEADER =================
   Widget _chatHeader(ThemeData theme) {
     final isDark = theme.brightness == Brightness.dark;
 
@@ -225,7 +253,6 @@ class _ChatBotPageState extends State<ChatBotPage> {
     );
   }
 
-  // ================= CHAT BUBBLE =================
   Widget _chatBubble(
       String text, {
         required bool isUser,
@@ -242,8 +269,7 @@ class _ChatBotPageState extends State<ChatBotPage> {
               padding: const EdgeInsets.only(right: 8),
               child: CircleAvatar(
                 radius: 18,
-                backgroundColor:
-                theme.colorScheme.primary.withOpacity(0.15),
+                backgroundColor: theme.colorScheme.primary.withOpacity(0.15),
                 child: Image.asset(
                   'assets/icon/chatbot.png',
                   width: 26,
@@ -252,15 +278,18 @@ class _ChatBotPageState extends State<ChatBotPage> {
             ),
           Container(
             constraints: const BoxConstraints(maxWidth: 260),
-            padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isUser
-                  ? theme.colorScheme.primary
-                  : theme.cardColor,
+              color: isUser ? theme.colorScheme.primary : theme.cardColor,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: SelectableText(
+            child: text == "Typing..."
+                ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+                : SelectableText(
               text,
               style: TextStyle(
                 color: isUser

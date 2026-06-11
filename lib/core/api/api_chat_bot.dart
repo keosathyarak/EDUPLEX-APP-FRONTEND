@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 
 class ApiChatBot {
   // ⚠️ DO NOT COMMIT REAL KEY
-  static const String _apiKey = "AIzaSyA1JMusiLr2iHVnBu-WvGLhhHH2WjgThJ8";
+  static const String _apiKey = "AIzaSyCNu2k4PCSBRLaXkkUW4mFmCRxTeqAP5y0";
 
   static const String _endpoint =
       "https://generativelanguage.googleapis.com/v1beta/models/"

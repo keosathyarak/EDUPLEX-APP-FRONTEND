@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+
 import 'package:EduPlex/routes/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:EduPlex/routes/app_routes.dart';
 
 class EduplexPaymentPage extends StatefulWidget {
@@ -13,15 +15,13 @@ class EduplexPaymentPage extends StatefulWidget {
   const EduplexPaymentPage({super.key, this.course});
 
   @override
-  State<EduplexPaymentPage> createState() =>
-      _EduplexPaymentPageState();
+  State<EduplexPaymentPage> createState() => _EduplexPaymentPageState();
 }
 
 class _EduplexPaymentPageState extends State<EduplexPaymentPage>
     with SingleTickerProviderStateMixin {
-
   static const String baseUrl =
-      'https://keratotic-uninserted-henry.ngrok-free.dev';
+      'https://affection-reborn-cringe.ngrok-free.dev';
 
   Uint8List? qrBytes;
   String? md5;
@@ -59,42 +59,79 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
     super.dispose();
   }
 
-  // ================= GENERATE QR =================
-  Future<void> generateQR() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString("token");
+  Future<Map<String, dynamic>?> _decodeJsonResponse(http.Response res) async {
+    print("STATUS: ${res.statusCode}");
+    print("BODY: ${res.body}");
 
-    final payload = {
-      "course_id": widget.course?["id"],
-      "amount": courseAmount,
-      "currency": "USD",
-      "billNumber": widget.course?["title"],
-    };
+    final contentType = res.headers["content-type"] ?? "";
 
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/generate'),
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer $token",
-      },
-      body: jsonEncode(payload),
-    );
-
-    final json = jsonDecode(res.body);
-
-    if (json["success"] == true) {
-      md5 = json["data"]["md5Hash"];
-      final base64Part =
-          json["data"]["qrCodeImage"].split(',').last;
-      qrBytes = base64Decode(base64Part);
-      startChecking();
+    if (!contentType.contains("application/json")) {
+      return null;
     }
 
-    setState(() => loading = false);
+    return jsonDecode(res.body) as Map<String, dynamic>;
+  }
+
+  // ================= GENERATE QR =================
+  Future<void> generateQR() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString("token");
+
+      if (token == null || token.isEmpty) {
+        print("NO TOKEN FOUND");
+        setState(() => loading = false);
+        return;
+      }
+
+      final payload = {
+        "course_id": widget.course?["id"],
+        "amount": courseAmount,
+        "currency": "USD",
+        "billNumber": widget.course?["title"] ?? "Eduplex",
+      };
+
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/generate'),
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $token",
+        },
+        body: jsonEncode(payload),
+      );
+
+      final data = await _decodeJsonResponse(res);
+
+      if (data == null) {
+        setState(() => loading = false);
+        return;
+      }
+
+      if (data["success"] == true) {
+        md5 = data["data"]["md5Hash"];
+
+        final qrImage = data["data"]["qrCodeImage"];
+        final base64Part = qrImage.split(',').last;
+
+        qrBytes = base64Decode(base64Part);
+
+        startChecking();
+      } else {
+        print("GENERATE FAILED: ${data["message"]}");
+      }
+
+      setState(() => loading = false);
+    } catch (e) {
+      print("GENERATE ERROR: $e");
+      setState(() => loading = false);
+    }
   }
 
   // ================= CHECK PAYMENT =================
   void startChecking() {
+    timer?.cancel();
+
     timer = Timer.periodic(
       const Duration(seconds: 3),
           (_) => checkPayment(),
@@ -102,47 +139,62 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
   }
 
   Future<void> checkPayment() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString("token");
+    try {
+      if (md5 == null) return;
 
-    final res = await http.post(
-      Uri.parse('$baseUrl/api/check'),
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer $token",
-      },
-      body: jsonEncode({
-        "md5": md5,
-        "course_id": widget.course?["id"],
-      }),
-    );
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString("token");
 
-    final json = jsonDecode(res.body);
+      if (token == null || token.isEmpty) {
+        print("NO TOKEN FOUND");
+        timer?.cancel();
+        return;
+      }
 
-    if (json["success"] == true && json["paid"] == true) {
-      timer?.cancel();
-      setState(() => isPaid = true);
+      final res = await http.post(
+        Uri.parse('$baseUrl/api/check'),
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $token",
+        },
+        body: jsonEncode({
+          "md5": md5,
+          "course_id": widget.course?["id"],
+        }),
+      );
+
+      final data = await _decodeJsonResponse(res);
+
+      if (data == null) return;
+
+      if (data["success"] == true && data["data"]?["paid"] == true) {
+        timer?.cancel();
+
+        setState(() {
+          isPaid = true;
+        });
+
+        print("PAYMENT SUCCESS");
+      }
+    } catch (e) {
+      print("CHECK ERROR: $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: isPaid ? _successUI() : _paymentUI(),
-    );
+    return isPaid ? _successUI() : _paymentUI();
   }
 
-  // ================= BEAUTIFUL PAYMENT UI =================
   Widget _paymentUI() {
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: SafeArea(
         child: Column(
           children: [
-
             const SizedBox(height: 20),
 
-            // LOGO + TITLE
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -186,12 +238,13 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
                     const Text(
                       "Eduplex",
                       style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold),
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
 
                     const SizedBox(height: 6),
-                    // COURSE NAME
+
                     Text(
                       widget.course?["title"] ?? "Course",
                       textAlign: TextAlign.center,
@@ -204,7 +257,6 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
 
                     const SizedBox(height: 6),
 
-// AMOUNT
                     Text(
                       "\$${courseAmount.toStringAsFixed(2)}",
                       style: const TextStyle(
@@ -216,10 +268,8 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
 
                     const SizedBox(height: 16),
 
-
-
                     const Text(
-                      "E-Learning App ,Pay once learn everywhere.\nIgnite Your Learning Journey",
+                      "E-Learning App, Pay once learn everywhere.\nIgnite Your Learning Journey",
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 12),
                     ),
@@ -244,11 +294,16 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
                             color: Colors.white,
                             size: 18,
                           ),
-                        )
+                        ),
                       ],
                     ),
                   ],
                 ),
+              )
+            else
+              const Text(
+                "QR generation failed",
+                style: TextStyle(color: Colors.red),
               ),
 
             const Spacer(),
@@ -281,7 +336,6 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
     );
   }
 
-  // ================= BEAUTIFUL SUCCESS UI =================
   Widget _successUI() {
     final now = DateTime.now();
 
@@ -292,7 +346,6 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             children: [
-
               const SizedBox(height: 20),
 
               Row(
@@ -342,22 +395,33 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
                 child: Text(
                   "Transaction Detail",
                   style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold),
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
 
               const SizedBox(height: 15),
 
-              _detailRow("Transaction ID",
-                  md5?.substring(0, 10) ?? "8490858564"),
-              _detailRow("Date",
-                  "${now.hour}:${now.minute} | ${now.day}/${now.month}/${now.year}"),
+              _detailRow(
+                "Transaction ID",
+                md5 != null && md5!.length >= 10
+                    ? md5!.substring(0, 10)
+                    : "N/A",
+              ),
+              _detailRow(
+                "Date",
+                "${now.hour}:${now.minute} | ${now.day}/${now.month}/${now.year}",
+              ),
               _detailRow("Type of transaction", "ABA BANK"),
-              _detailRow("Nominal",
-                  "\$${courseAmount.toStringAsFixed(2)}"),
-              _detailRow("Bill Number",
-                  widget.course?["id"]?.toString() ?? "Edu-001"),
+              _detailRow(
+                "Nominal",
+                "\$${courseAmount.toStringAsFixed(2)}",
+              ),
+              _detailRow(
+                "Bill Number",
+                widget.course?["id"]?.toString() ?? "Edu-001",
+              ),
               _detailRow("Status", "success", isSuccess: true),
 
               const Spacer(),
@@ -391,8 +455,11 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
     );
   }
 
-  Widget _detailRow(String title, String value,
-      {bool isSuccess = false}) {
+  Widget _detailRow(
+      String title,
+      String value, {
+        bool isSuccess = false,
+      }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -402,13 +469,15 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
           isSuccess
               ? Row(
             children: [
-              const Icon(Icons.check,
-                  color: Colors.green, size: 16),
+              const Icon(
+                Icons.check,
+                color: Colors.green,
+                size: 16,
+              ),
               const SizedBox(width: 4),
               Text(
                 value,
-                style: const TextStyle(
-                    color: Colors.green),
+                style: const TextStyle(color: Colors.green),
               ),
             ],
           )
