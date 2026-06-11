@@ -8,6 +8,7 @@ import 'package:EduPlex/routes/app_routes.dart';
 
 import '../../core/api/api_config.dart';
 import '../../routes/app_router.dart';
+import '../home/widgets/header.dart';
 
 class CoursePage extends StatefulWidget {
   final VoidCallback onToggleTheme;
