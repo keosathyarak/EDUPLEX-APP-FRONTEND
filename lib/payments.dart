@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:EduPlex/routes/app_router.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-
-import 'package:EduPlex/routes/app_routes.dart';
+import 'package:gal/gal.dart';
+import 'package:share_plus/share_plus.dart';
 
 class EduplexPaymentPage extends StatefulWidget {
   final Map<String, dynamic>? course;
@@ -28,6 +30,7 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
 
   bool loading = true;
   bool isPaid = false;
+  bool _isSavingOrSharing = false;
 
   Timer? timer;
   late AnimationController _controller;
@@ -179,6 +182,89 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
       }
     } catch (e) {
       print("CHECK ERROR: $e");
+   }
+  }
+
+  // ================= SAVE QR CODE =================
+  Future<void> _saveQRCode() async {
+    if (qrBytes == null) return;
+
+    setState(() => _isSavingOrSharing = true);
+
+    try {
+      final tempDir = await getTemporaryDirectory();
+
+      final file = File(
+        '${tempDir.path}/qr_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+
+      await file.writeAsBytes(qrBytes!);
+
+      await Gal.putImage(file.path);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("✓ QR Code saved successfully"),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Save failed: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingOrSharing = false);
+      }
+    }
+  }
+
+  // ================= SHARE QR CODE =================
+  Future<void> _shareQRCode() async {
+    if (qrBytes == null) return;
+    
+    setState(() => _isSavingOrSharing = true);
+    try {
+      // Save to temporary file
+      final tempDir = await getTemporaryDirectory();
+      final fileName = 'qr_code_${widget.course?["id"]}_${DateTime.now().millisecondsSinceEpoch}.png';
+      final file = File('${tempDir.path}/$fileName');
+      await file.writeAsBytes(qrBytes!);
+      
+      // Share the file
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Check out this QR code for ${widget.course?["title"] ?? "Eduplex"}',
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✓ QR code shared!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error sharing QR code: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSavingOrSharing = false);
+      }
     }
   }
 
@@ -297,6 +383,38 @@ class _EduplexPaymentPageState extends State<EduplexPaymentPage>
                         ),
                       ],
                     ),
+
+                    const SizedBox(height: 24),
+
+                    if (_isSavingOrSharing)
+                      const SizedBox(
+                        height: 40,
+                        child: CircularProgressIndicator(),
+                      )
+                    else
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _saveQRCode,
+                            icon: const Icon(Icons.download),
+                            label: const Text('Save'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade600,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: _shareQRCode,
+                            icon: const Icon(Icons.save_alt),
+                            label: const Text('Share'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue.shade600,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
               )
